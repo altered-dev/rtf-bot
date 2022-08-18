@@ -1,23 +1,15 @@
 package games
 
-import dao.dao
-import dev.kord.common.entity.ButtonStyle
-import dev.kord.common.entity.DiscordPartialEmoji
-import dev.kord.common.entity.Snowflake
-import dev.kord.core.behavior.interaction.respondEphemeral
-import dev.kord.core.behavior.interaction.updateEphemeralMessage
-import dev.kord.rest.builder.message.create.MessageCreateBuilder
-import dev.kord.rest.builder.message.create.actionRow
-import dev.kord.rest.builder.message.create.embed
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import dao.Dao
+import dev.kord.common.entity.*
+import dev.kord.core.behavior.interaction.*
+import dev.kord.core.event.interaction.ButtonInteractionCreateEvent
+import dev.kord.rest.builder.message.create.*
 import kotlin.random.Random
-import dev.kord.core.event.interaction.GuildButtonInteractionCreateEvent as GuBICE
 import dev.kord.core.event.interaction.GuildChatInputCommandInteractionCreateEvent as GCICICE
 
 class Game2048(val size: Int) {
     var score = 0
-        private set
     private var field = List(size) { IntArray(size) }
     private val bounds inline get() = 0 until size
 
@@ -56,8 +48,10 @@ class Game2048(val size: Int) {
             var x = if (dx == 1) size - 1 else 0
             var ix = x
             while (x in bounds && ix in bounds) {
-                do ix -= dx while (ix in bounds && field[ix][y] == 0)
-                if (ix !in bounds) break
+                if (field[ix][y] == 0) {
+                    ix -= dx
+                    continue
+                }
                 newField[x][y] = field[ix][y]
                 do ix -= dx while (ix in bounds && field[ix][y] == 0)
                 if (ix in bounds && field[ix][y] == newField[x][y]) {
@@ -79,8 +73,10 @@ class Game2048(val size: Int) {
             var y = if (dy == 1) size - 1 else 0
             var iy = y
             while (y in bounds && iy in bounds) {
-                do iy -= dy while (iy in bounds && field[x][iy] == 0)
-                if (iy !in bounds) break
+                if (field[x][iy] == 0) {
+                    iy -= dy
+                    continue
+                }
                 newField[x][y] = field[x][iy]
                 do iy -= dy while (iy in bounds && field[x][iy] == 0)
                 if (iy in bounds && field[x][iy] == newField[x][y]) {
@@ -102,9 +98,7 @@ class Game2048(val size: Int) {
 
     override fun toString() = buildString {
         for (y in bounds) {
-            for (x in bounds) {
-                append(tiles[field[x][y]])
-            }
+            bounds.forEach { append(tiles[field[it][y]]) }
             appendLine()
         }
     }
@@ -133,7 +127,7 @@ class Game2048(val size: Int) {
     }
 }
 
-suspend fun GuBICE.handle2048buttons() {
+suspend fun ButtonInteractionCreateEvent.handle2048buttons() {
     println("2048")
     val game = Game2048.games[interaction.user.id] ?: return
     when (interaction.componentId) {
@@ -144,9 +138,9 @@ suspend fun GuBICE.handle2048buttons() {
     }
     var isGameOver = game.isGameOver
     if (interaction.componentId == "2048stop") isGameOver = true
-    if (isGameOver) withContext(Dispatchers.IO) {
-        val user = dao.user(interaction.user.id.value) ?: dao.addUser(interaction.user.id.value)
-        dao.editUser(user!!.id, user.credit + game.score)
+    if (isGameOver) {
+        val user = Dao.user(interaction.user.id.value) ?: Dao.addUser(interaction.user.id.value)
+        Dao.editUser(user!!.id, user.credit + game.score)
         Game2048.games.remove(interaction.user.id)
         println("${interaction.user.username} stopped playing")
     }

@@ -1,3 +1,4 @@
+import commands.createCommands
 import dao.DatabaseFactory
 import dev.kord.common.entity.Snowflake
 import dev.kord.core.Kord

@@ -1,9 +1,8 @@
 package dao
 
 import kotlinx.coroutines.Dispatchers
-import model.Users
-import org.jetbrains.exposed.sql.Database
-import org.jetbrains.exposed.sql.SchemaUtils
+import model.*
+import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.transactions.experimental.newSuspendedTransaction
 import org.jetbrains.exposed.sql.transactions.transaction
 
@@ -14,6 +13,7 @@ object DatabaseFactory {
         val database = Database.connect(jdbcUrl, driverClassName)
         transaction(database) {
             SchemaUtils.create(Users)
+            SchemaUtils.create(CatWives)
         }
     }
 

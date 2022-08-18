@@ -1,60 +1,30 @@
 package games
 
 import bot
-import dao.dao
-import dev.kord.common.entity.ButtonStyle
-import dev.kord.common.entity.DiscordPartialEmoji
-import dev.kord.common.entity.Snowflake
-import dev.kord.core.behavior.channel.createMessage
-import dev.kord.core.behavior.interaction.respondEphemeral
-import dev.kord.core.behavior.interaction.respondPublic
+import dev.kord.common.entity.*
+import dev.kord.core.behavior.channel.*
+import dev.kord.core.behavior.interaction.*
 import dev.kord.core.entity.User
-import dev.kord.rest.builder.message.create.MessageCreateBuilder
-import dev.kord.rest.builder.message.create.actionRow
-import dev.kord.rest.builder.message.create.allowedMentions
+import dev.kord.rest.builder.message.create.*
+import get
 import guildId
-import dev.kord.core.event.interaction.GlobalButtonInteractionCreateEvent as GBICE
-import dev.kord.core.event.interaction.GuildButtonInteractionCreateEvent as GuBICE
+import dev.kord.core.event.interaction.ButtonInteractionCreateEvent as BICE
 import dev.kord.core.event.interaction.GuildUserCommandInteractionCreateEvent as GUCICE
+import dev.kord.rest.builder.message.create.MessageCreateBuilder as MCB
 
-class Rps {
-    var player1Choice: Choice? = null
-    var player2Choice: Choice? = null
-
+class Rps(var firstChoice: Choice? = null) {
     enum class Choice(val emoji: String) {
-        ROCK("\uD83E\uDEA8"), PAPER("\uD83D\uDCC4"), SCISSORS("✂️");
+        ROCK("\uD83E\uDEA8"), GUN("\uD83D\uDD2B"), LIGHTNING("⚡"), DEVIL("\uD83D\uDE08"), DRAGON("\uD83D\uDC09"),
+        WATER("\uD83D\uDCA6"), AIR("\uD83D\uDCA8"), PAPER("\uD83D\uDCC4"), SPONGE("\uD83E\uDDFD"), WOLF("\uD83D\uDC3A"),
+        TREE("\uD83C\uDF33"), HUMAN("\uD83E\uDDCD"), SNAKE("\uD83D\uDC0D"), SCISSORS("\u2702\uFE0F"), FIRE("\uD83D\uDD25");
 
-        /**
-         * TODO: алгоритм получше
-         * @return -1 - победил первый игрок
-         *
-         *  0 - ничья
-         *
-         *  1 - победил второй игрок
-         */
-        infix fun vs(other: Choice): Int {
-            return when (this) {
-                ROCK -> when (other) {
-                    ROCK -> 0
-                    PAPER -> 1
-                    SCISSORS -> -1
-                }
-                PAPER -> when (other) {
-                    ROCK -> -1
-                    PAPER -> 0
-                    SCISSORS -> 1
-                }
-                SCISSORS -> when (other) {
-                    ROCK -> 1
-                    PAPER -> -1
-                    SCISSORS -> 0
-                }
-            }
+        infix fun vs(other: Choice) = when {
+            ordinal == other.ordinal -> 0
+            (other.ordinal - ordinal).mod(size) > size / 2 -> 1
+            else -> -1
         }
 
-        companion object : List<Choice> by values().asList() {
-            fun findByName(name: String) = find { it.name.equals(name, true) }
-        }
+        companion object : List<Choice> by values().asList()
     }
 
     companion object {
@@ -63,7 +33,7 @@ class Rps {
     }
 }
 
-const val name = "Камень-Ножницы-Бумага!"
+const val name = "Камень-Ножницы-Бумага"
 const val rpsWinCredits = 100
 
 suspend fun GUCICE.playRps() {
@@ -75,102 +45,83 @@ suspend fun GUCICE.playRps() {
     if (player1.id == player2.id) return run {
         interaction.respondEphemeral { content = "Нельзя играть с собой!" }
     }
-    if (player1.id to player2.id in Rps.games) return run {
+    if (player1.id to player2.id in Rps.games || player2.id to player1.id in Rps.games) return run {
         interaction.respondEphemeral { content = "У вас уже есть текущая игра!" }
     }
     Rps.games[player1.id to player2.id] = Rps()
 
     interaction.respondEphemeral {
         allowedMentions()
-        content = "Вы вызвали ${player2.mention} в $name Выберите символ:"
-        buttons(player2.id)
+        content = "Вы вызвали ${player2.mention} в $name! Выберите символ:"
+        buttons(player2.id, false)
     }
     player2.getDmChannel().createMessage {
-        content = "${player1.mention} вызвал в $name Выберите символ:"
-        buttons(player1.id)
+        content = "${player1.mention} вызвал в $name! Выберите символ:"
+        buttons(player1.id, false)
     }
 }
 
-// PLAYER 1
-suspend fun GuBICE.handleRpsButtons() {
-    val id = interaction.componentId
-    val (choice, id2) = id.split('_')
-    val player1 = interaction.user
-    val player2 = bot.getUser(Snowflake(id2.toULong()))!!
-    val game = Rps.games[player1.id to player2.id] ?: return run {
-        interaction.respondEphemeral { content = "Игры не существует!" }
+private fun MCB.buttons(id: Snowflake, disabled: Boolean = false, chosen: Rps.Choice? = null) {
+    for (row in Rps.Choice.chunked(5)) actionRow {
+        for (choice in row) interactionButton(
+            if (choice == chosen) ButtonStyle.Success else ButtonStyle.Secondary,
+            "rps${choice.name.lowercase()}_${id.value}"
+        ) {
+            emoji = DiscordPartialEmoji(name = choice.emoji)
+            this.disabled = disabled
+        }
     }
-
-    game.player1Choice = Rps.Choice.findByName(choice.substring(3))
-    if (game.player2Choice != null) {
-        val result = game.player1Choice!! vs game.player2Choice!!
-        interaction.respondEphemeral {
-            content = finalMessage(result, player2, game, false)
-        }
-        player2.getDmChannelOrNull()?.createMessage {
-            content = finalMessage(-result, player1, game, true)
-        }
-        Rps.games -= player1.id to player2.id
-        if (result != 0) addPointsToWinner(if (result == -1) player1.id.value else player2.id.value)
-    } else interaction.respondEphemeral { content = "Выбор сделан." }
 }
 
-// PLAYER 2
-suspend fun GBICE.handleRpsButtons() {
-    val id = interaction.componentId
-    val (choice, id1) = id.split('_')
-    val player1 = bot.getUser(Snowflake(id1.toULong()))!!
-    val player2 = interaction.user
-    val game = Rps.games[player1.id to player2.id] ?: return run {
-        interaction.respondEphemeral { content = "Игры не существует!" }
+suspend fun BICE.handleRpsButtons() {
+    val (choiceName, otherId) = interaction.componentId.split('_')
+    val user =  interaction.user
+    val other = bot.getUser(Snowflake(otherId))!!
+    val game = Rps.games[user.id to other.id]
+        ?: Rps.games[other.id to user.id]
+        ?: Rps().also { Rps.games[user.id to other.id] = it }
+
+    val choice = Rps.Choice[choiceName.substring(3)]!!
+    interaction.updateEphemeralMessage {
+        allowedMentions()
+        content = "Выбор против ${other.mention} сделан."
+        buttons(other.id, true, choice)
     }
-
-    game.player2Choice = Rps.Choice.findByName(choice.substring(3))
-    if (game.player1Choice != null) {
-        val result = game.player1Choice!! vs game.player2Choice!!
-        interaction.respondPublic {
-            content = finalMessage(-result, player1, game, true)
-        }
-        player1.getDmChannelOrNull()?.createMessage {
-            content = finalMessage(result, player2, game, false)
-        }
-        Rps.games -= player1.id to player2.id
-        if (result != 0) addPointsToWinner(if (result == -1) player1.id.value else player2.id.value)
-    } else interaction.respondEphemeral { content = "Выбор сделан." }
+    if (game.firstChoice == null) {
+        game.firstChoice = choice
+        return
+    }
+    val result = choice vs game.firstChoice!!
+    sendFinalMessage(user, other, result, choice, game.firstChoice!!)
+    sendFinalMessage(other, user, -result, game.firstChoice!!, choice)
+    Rps.games -= user.id to other.id
+    Rps.games -= other.id to user.id
 }
 
-private suspend fun addPointsToWinner(id: ULong) {
-    val user = dao.user(id) ?: dao.addUser(id) ?: return
-    dao.editUser(id, user.credit + rpsWinCredits)
-}
-
-private fun finalMessage(
+suspend fun sendFinalMessage(
+    user: User,
+    other: User,
     result: Int,
-    otherPlayer: User,
-    game: Rps,
-    isPlayer2: Boolean,
-): String {
-    val outcome = when (result) {
-        -1 -> "выиграли"
-        0 -> "получили ничью с"
-        1 -> "програли"
-        else -> "ебанулись"
+    choice: Rps.Choice,
+    otherChoice: Rps.Choice
+) = user.getDmChannelOrNull()?.createEmbed {
+    title = "Вы ${result.outcome} в $name!"
+    description = "против ${other.mention}"
+    field {
+        name = "Ваш выбор"
+        value = choice.emoji
+        inline = true
     }
-    return """
-        Вы $outcome ${otherPlayer.mention} в $name!
-        Ваш выбор - ${(if (isPlayer2) game.player2Choice else game.player1Choice)!!.emoji}
-        Выбор противника - ${(if (isPlayer2) game.player1Choice else game.player2Choice)!!.emoji}
-    """.trimIndent()
+    field {
+        name = "Выбор противника"
+        value = otherChoice.emoji
+        inline = true
+    }
 }
 
-private fun MessageCreateBuilder.buttons(id: Snowflake) = actionRow {
-    interactionButton(ButtonStyle.Secondary, "rpsrock_${id.value}") {
-        emoji = DiscordPartialEmoji(name = "\uD83E\uDEA8")
-    }
-    interactionButton(ButtonStyle.Secondary, "rpspaper_${id.value}") {
-        emoji = DiscordPartialEmoji(name = "\uD83D\uDCC4")
-    }
-    interactionButton(ButtonStyle.Secondary, "rpsscissors_${id.value}") {
-        emoji = DiscordPartialEmoji(name = "✂️")
-    }
+private val Int.outcome get() = when (this) {
+    1 -> "выиграли"
+    0 -> "получили ничью"
+    -1 -> "проиграли"
+    else -> "неизвестно"
 }

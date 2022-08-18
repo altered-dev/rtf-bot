@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalUnsignedTypes::class)
+
 package model
 
 import org.jetbrains.exposed.sql.Table
@@ -8,7 +10,6 @@ data class User(
 )
 
 object Users : Table() {
-    @OptIn(ExperimentalUnsignedTypes::class)
     val id = ulong("id")
     val credit = long("credit")
 

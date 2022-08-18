@@ -1,27 +1,20 @@
-import dao.dao
-import dev.kord.common.entity.Permission
-import dev.kord.common.entity.Permissions
-import dev.kord.core.behavior.interaction.respondEphemeral
-import dev.kord.core.behavior.interaction.respondPublic
+package commands
+
+import bot
+import dao.Dao
+import dev.kord.core.behavior.interaction.*
 import dev.kord.core.entity.interaction.SubCommand
-import dev.kord.core.event.interaction.GlobalButtonInteractionCreateEvent
-import dev.kord.core.event.interaction.GuildButtonInteractionCreateEvent
 import dev.kord.core.on
-import dev.kord.rest.builder.interaction.int
-import dev.kord.rest.builder.interaction.subCommand
-import dev.kord.rest.builder.interaction.user
+import dev.kord.rest.builder.interaction.*
 import dev.kord.rest.builder.message.create.allowedMentions
-import games.handle2048buttons
-import games.handleRpsButtons
-import games.play2048
-import games.playRps
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import java.io.ByteArrayInputStream
-import java.io.ByteArrayOutputStream
+import games.*
+import guildId
+import kotlinx.coroutines.*
+import java.io.*
 import java.net.URL
 import javax.imageio.ImageIO
 import kotlin.math.abs
+import dev.kord.core.event.interaction.ButtonInteractionCreateEvent as BICE
 import dev.kord.core.event.interaction.GuildApplicationCommandInteractionCreateEvent as GACICE
 import dev.kord.core.event.interaction.GuildChatInputCommandInteractionCreateEvent as GCICICE
 import dev.kord.core.event.interaction.GuildMessageCommandInteractionCreateEvent as GMCICE
@@ -31,11 +24,13 @@ import dev.kord.core.event.interaction.GuildUserCommandInteractionCreateEvent as
 
 private const val USER_INFO = "Информация"
 private const val COMPARE = "Проверить на совместимость"
+private const val RPS = "Сыграть в Камень-Ножницы-Бумага"
 private const val REPEAT = "Повторить"
-private const val SOCIAL_CREDIT = "sc"
 private const val LEADERBOARD = "leaderboard"
 private const val PLAY = "play"
-private const val RPS = "Сыграть в Камень-Ножницы-Бумага"
+
+internal const val SOCIAL_CREDIT = "sc"
+internal const val CAT_WIFE = "cw"
 
 const val POSITIVE =
     "https://media.discordapp.net/attachments/777832858059407391/1008420638442135583/positive.png"
@@ -59,50 +54,25 @@ suspend fun createCommands() {
                 }
             }
         }
-        input(SOCIAL_CREDIT, "Управление социальным кредитом") {
-            defaultMemberPermissions = Permissions { +Permission.Administrator }
-            subCommand("balance", "Посмотреть баланс") {
-                user("user", "Пользователь") {
-                    required = true
-                }
-            }
-            subCommand("modify", "Изменить баланс относительно") {
-                user("user", "Пользователь") {
-                    required = true
-                }
-                int("amount", "На какое количество изменить") {
-                    required = true
-                }
-            }
-            subCommand("set", "Задать баланс") {
-                user("user", "Пользователь") {
-                    required = true
-                }
-                int("amount", "Какое количество задать") {
-                    required = true
-                }
-            }
-        }
+        socialCredit()
+        catWife()
     }
 
     bot.on<GACICE> {
         when (interaction.invokedCommandName) {
             USER_INFO -> (this as GUCICE).userInfo()
             COMPARE -> (this as GUCICE).compare()
+            RPS -> (this as GUCICE).playRps()
             REPEAT -> (this as GMCICE).repeat()
             SOCIAL_CREDIT -> (this as GCICICE).socialCredit()
             LEADERBOARD -> (this as GCICICE).leaderboard()
             PLAY -> (this as GCICICE).play()
-            RPS -> (this as GUCICE).playRps()
+            CAT_WIFE -> (this as GCICICE).catWife()
         }
     }
 
-    bot.on<GuildButtonInteractionCreateEvent> {
+    bot.on<BICE> {
         if (interaction.componentId.startsWith("2048")) handle2048buttons()
-        if (interaction.componentId.startsWith("rps")) handleRpsButtons()
-    }
-
-    bot.on<GlobalButtonInteractionCreateEvent> {
         if (interaction.componentId.startsWith("rps")) handleRpsButtons()
     }
 }
@@ -111,7 +81,7 @@ suspend fun createCommands() {
 
 suspend fun GUCICE.userInfo() {
     val user = interaction.target.asMember(guildId)
-    val userRow = dao.user(user.id.value) ?: dao.addUser(user.id.value) ?: kotlin.run {
+    val userRow = Dao.user(user.id.value) ?: Dao.addUser(user.id.value) ?: kotlin.run {
         interaction.respondEphemeral { content = "Ошибка в базе данных." }
         return
     }
@@ -141,30 +111,6 @@ suspend fun GUCICE.userInfo() {
     }
 }
 
-suspend fun GCICICE.socialCredit() {
-    val cmd = interaction.command as SubCommand
-    val user by cmd.users
-    val amount = cmd.integers["amount"]
-    val userRow = withContext(Dispatchers.IO) {
-        dao.user(user.id.value) ?: dao.addUser(user.id.value)
-    } ?: return run { interaction.respondEphemeral { content = "Ошибка в базе данных." } }
-
-    interaction.respondEphemeral {
-        allowedMentions()
-        when (cmd.name) {
-            "balance" -> content = "У <@${userRow.id}> ${userRow.credit} очков."
-            "modify" -> {
-                dao.editUser(userRow.id, userRow.credit + amount!!)
-                content = "Теперь у <@${userRow.id}> ${userRow.credit + amount} очков."
-            }
-            "set" -> {
-                dao.editUser(userRow.id, amount!!)
-                content = "Теперь у <@${userRow.id}> $amount очков."
-            }
-        }
-    }
-}
-
 suspend fun GUCICE.compare() {
     val user = interaction.user
     val match = interaction.target.asUser()
@@ -188,16 +134,14 @@ suspend fun GMCICE.repeat() {
 suspend fun GCICICE.leaderboard() {
     interaction.respondEphemeral {
         allowedMentions()
-        val top = withContext(Dispatchers.IO) {
-            dao.allUsers()
-                .sortedByDescending { it.credit }
-                .take(10)
-        }
         content = buildString {
             appendLine("**Рейтинг социального кредита:**")
-            top.forEachIndexed { index, (id, credit) ->
-                appendLine("**${index + 1}**: <@$id> - $credit очков")
-            }
+            Dao.allUsers()
+                .sortedByDescending { it.credit }
+                .take(10)
+                .forEachIndexed { index, (id, credit) ->
+                    appendLine("**${index + 1}**: <@$id> - $credit очков")
+                }
         }
     }
 }
@@ -206,10 +150,7 @@ suspend fun GCICICE.play() {
     val cmd = interaction.command as SubCommand
 
     when (cmd.name) {
-        "2048" -> {
-            val size = cmd.integers["size"] ?: 4
-            play2048(size.toInt())
-        }
+        "2048" -> play2048(cmd.integers["size"]?.toInt() ?: 4)
     }
 }
 
