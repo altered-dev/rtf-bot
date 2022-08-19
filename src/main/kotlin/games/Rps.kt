@@ -19,12 +19,22 @@ class Rps(var firstChoice: Choice? = null) {
         TREE("\uD83C\uDF33"), HUMAN("\uD83E\uDDCD"), SNAKE("\uD83D\uDC0D"), SCISSORS("\u2702\uFE0F"), FIRE("\uD83D\uDD25");
 
         infix fun vs(other: Choice) = when {
-            ordinal == other.ordinal -> 0
-            (other.ordinal - ordinal).mod(size) > size / 2 -> 1
-            else -> -1
+            ordinal == other.ordinal -> Outcome.DRAW
+            (other.ordinal - ordinal).mod(size) > size / 2 -> Outcome.WIN
+            else -> Outcome.LOSE
         }
 
         companion object : List<Choice> by values().asList()
+    }
+
+    enum class Outcome(val displayName: String) {
+        WIN("выиграли"), LOSE("проиграли"), DRAW("получили ничью");
+
+        operator fun unaryMinus() = when (this) {
+            WIN -> LOSE
+            LOSE -> WIN
+            DRAW -> DRAW
+        }
     }
 
     companion object {
@@ -34,7 +44,6 @@ class Rps(var firstChoice: Choice? = null) {
 }
 
 const val name = "Камень-Ножницы-Бумага"
-const val rpsWinCredits = 100
 
 suspend fun GUCICE.playRps() {
     val player1 = interaction.user
@@ -56,7 +65,7 @@ suspend fun GUCICE.playRps() {
         buttons(player2.id, false)
     }
     player2.getDmChannel().createMessage {
-        content = "${player1.mention} вызвал в $name! Выберите символ:"
+        content = "${player1.mention} вызвал вас в $name! Выберите символ:"
         buttons(player1.id, false)
     }
 }
@@ -91,9 +100,9 @@ suspend fun BICE.handleRpsButtons() {
         game.firstChoice = choice
         return
     }
-    val result = choice vs game.firstChoice!!
-    sendFinalMessage(user, other, result, choice, game.firstChoice!!)
-    sendFinalMessage(other, user, -result, game.firstChoice!!, choice)
+    val outcome = choice vs game.firstChoice!!
+    sendFinalMessage(user, other, outcome, choice, game.firstChoice!!)
+    sendFinalMessage(other, user, -outcome, game.firstChoice!!, choice)
     Rps.games -= user.id to other.id
     Rps.games -= other.id to user.id
 }
@@ -101,11 +110,11 @@ suspend fun BICE.handleRpsButtons() {
 suspend fun sendFinalMessage(
     user: User,
     other: User,
-    result: Int,
+    outcome: Rps.Outcome,
     choice: Rps.Choice,
     otherChoice: Rps.Choice
 ) = user.getDmChannelOrNull()?.createEmbed {
-    title = "Вы ${result.outcome} в $name!"
+    title = "Вы ${outcome.displayName} в $name!"
     description = "против ${other.mention}"
     field {
         name = "Ваш выбор"
@@ -117,11 +126,4 @@ suspend fun sendFinalMessage(
         value = otherChoice.emoji
         inline = true
     }
-}
-
-private val Int.outcome get() = when (this) {
-    1 -> "выиграли"
-    0 -> "получили ничью"
-    -1 -> "проиграли"
-    else -> "неизвестно"
 }
