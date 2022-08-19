@@ -32,9 +32,9 @@ private const val PLAY = "play"
 internal const val SOCIAL_CREDIT = "sc"
 internal const val CAT_WIFE = "cw"
 
-const val POSITIVE =
+private const val POSITIVE =
     "https://media.discordapp.net/attachments/777832858059407391/1008420638442135583/positive.png"
-const val NEGATIVE =
+private const val NEGATIVE =
     "https://media.discordapp.net/attachments/777832858059407391/1008420637926232084/negative.png"
 
 // endregion
@@ -64,9 +64,9 @@ suspend fun createCommands() {
             COMPARE -> (this as GUCICE).compare()
             RPS -> (this as GUCICE).playRps()
             REPEAT -> (this as GMCICE).repeat()
-            SOCIAL_CREDIT -> (this as GCICICE).socialCredit()
             LEADERBOARD -> (this as GCICICE).leaderboard()
             PLAY -> (this as GCICICE).play()
+            SOCIAL_CREDIT -> (this as GCICICE).socialCredit()
             CAT_WIFE -> (this as GCICICE).catWife()
         }
     }
