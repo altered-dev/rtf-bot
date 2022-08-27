@@ -1,16 +1,25 @@
 package commands
 
 import bot
-import dao.Dao
-import dev.kord.core.behavior.interaction.*
+import dev.kord.core.behavior.interaction.respondEphemeral
+import dev.kord.core.behavior.interaction.respondPublic
 import dev.kord.core.entity.interaction.SubCommand
 import dev.kord.core.on
-import dev.kord.rest.builder.interaction.*
+import dev.kord.rest.builder.interaction.int
+import dev.kord.rest.builder.interaction.subCommand
 import dev.kord.rest.builder.message.create.allowedMentions
-import games.*
+import model.User
+import games.handle2048buttons
+import games.handleRpsButtons
+import games.play2048
+import games.playRps
+import getUser
 import guildId
-import kotlinx.coroutines.*
-import java.io.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.jetbrains.exposed.sql.transactions.transaction
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.net.URL
 import javax.imageio.ImageIO
 import kotlin.math.abs
@@ -19,6 +28,7 @@ import dev.kord.core.event.interaction.GuildApplicationCommandInteractionCreateE
 import dev.kord.core.event.interaction.GuildChatInputCommandInteractionCreateEvent as GCICICE
 import dev.kord.core.event.interaction.GuildMessageCommandInteractionCreateEvent as GMCICE
 import dev.kord.core.event.interaction.GuildUserCommandInteractionCreateEvent as GUCICE
+import dev.kord.core.event.interaction.ModalSubmitInteractionCreateEvent as MSICE
 
 // region Названия команд
 
@@ -72,31 +82,39 @@ suspend fun createCommands() {
     }
 
     bot.on<BICE> {
-        if (interaction.componentId.startsWith("2048")) handle2048buttons()
-        if (interaction.componentId.startsWith("rps")) handleRpsButtons()
+        val id = interaction.componentId
+        when {
+            id.startsWith("2048") -> handle2048buttons()
+            id.startsWith("rps") -> handleRpsButtons()
+            id.startsWith("name_cat_wife") -> nameCatWife()
+        }
+    }
+
+    bot.on<MSICE> {
+        val id = interaction.modalId
+        when {
+            id.startsWith("name_cat_wife") -> saveCatWife()
+        }
     }
 }
 
 // region Команды
 
 suspend fun GUCICE.userInfo() {
-    val user = interaction.target.asMember(guildId)
-    val userRow = Dao.user(user.id.value) ?: Dao.addUser(user.id.value) ?: kotlin.run {
-        interaction.respondEphemeral { content = "Ошибка в базе данных." }
-        return
-    }
+    val id = interaction.target.id.value
+    val user = getUser(id)
 
     val image = withContext(Dispatchers.IO) {
-        if (userRow.credit > 0) ImageIO.read(URL(POSITIVE)).apply {
+        if (user.credit > 0) ImageIO.read(URL(POSITIVE)).apply {
             graphics.run {
                 font = font.deriveFont(72f)
-                drawString(userRow.credit.toString(), 500, 385)
+                drawString(user.credit.toString(), 500, 385)
                 dispose()
             }
         } else ImageIO.read(URL(NEGATIVE)).apply {
             graphics.run {
                 font = font.deriveFont(64f)
-                drawString(userRow.credit.toString(), 280, 280)
+                drawString(user.credit.toString(), 280, 280)
                 dispose()
             }
         }
@@ -106,7 +124,7 @@ suspend fun GUCICE.userInfo() {
 
     interaction.respondEphemeral {
         allowedMentions()
-        this.content = "${user.mention},"
+        this.content = "<@$id>,"
         addFile("positive.png", content)
     }
 }
@@ -136,12 +154,14 @@ suspend fun GCICICE.leaderboard() {
         allowedMentions()
         content = buildString {
             appendLine("**Рейтинг социального кредита:**")
-            Dao.allUsers()
-                .sortedByDescending { it.credit }
-                .take(10)
-                .forEachIndexed { index, (id, credit) ->
-                    appendLine("**${index + 1}**: <@$id> - $credit очков")
-                }
+            transaction {
+                User.all()
+                    .sortedByDescending { it.credit }
+                    .take(10)
+                    .forEachIndexed { index, (id, credit) ->
+                        appendLine("**${index + 1}**: <@$id> - $credit очков")
+                    }
+            }
         }
     }
 }

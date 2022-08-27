@@ -1,14 +1,17 @@
 package commands
 
-import dao.Dao
-import dev.kord.common.entity.*
+import dev.kord.common.entity.Permission
+import dev.kord.common.entity.Permissions
 import dev.kord.core.behavior.interaction.respondEphemeral
 import dev.kord.core.entity.interaction.SubCommand
 import dev.kord.core.event.interaction.GuildChatInputCommandInteractionCreateEvent
 import dev.kord.rest.builder.interaction.*
 import dev.kord.rest.builder.message.create.allowedMentions
-import get
 import model.CatWife
+import model.User
+import get
+import getUser
+import org.jetbrains.exposed.sql.transactions.transaction
 
 fun GuildMultiApplicationCommandBuilder.socialCredit() {
     input(SOCIAL_CREDIT, "Управление социальным кредитом") {
@@ -41,29 +44,29 @@ suspend fun GuildChatInputCommandInteractionCreateEvent.socialCredit() {
     val cmd = interaction.command as SubCommand
     val user by cmd.users
     val amount = cmd.integers["amount"]
-    val userRow = Dao.user(user.id.value) ?: Dao.addUser(user.id.value) ?: return run {
-        interaction.respondEphemeral { content = "Ошибка в базе данных." }
-    }
+    val userRow = getUser(user.id.value)
 
     interaction.respondEphemeral {
         allowedMentions()
         when (cmd.name) {
             "balance" -> content = "У <@${userRow.id}> ${userRow.credit} очков."
             "modify" -> {
-                Dao.editUser(userRow.id, userRow.credit + amount!!)
-                content = "Теперь у <@${userRow.id}> ${userRow.credit + amount} очков."
+                transaction { userRow.credit += amount!! }
+                content = "Теперь у <@${userRow.id}> ${userRow.credit + amount!!} очков."
             }
             "set" -> {
-                Dao.editUser(userRow.id, amount!!)
+                transaction { userRow.credit = amount!! }
                 content = "Теперь у <@${userRow.id}> $amount очков."
             }
         }
     }
 }
 
+
 fun GuildMultiApplicationCommandBuilder.catWife() {
     input(CAT_WIFE, "Управление кошко-жёнами") {
         defaultMemberPermissions = Permissions { +Permission.Administrator }
+        subCommand("test", "Тестирование")
         subCommand("get", "Получить кошко-жену") {
             catWifeId()
         }
@@ -113,11 +116,15 @@ private fun SubCommandBuilder.catWifeDescription(isRequired: Boolean) {
 suspend fun GuildChatInputCommandInteractionCreateEvent.catWife() {
     val cmd = interaction.command as SubCommand
     when (cmd.name) {
+        "test" -> {
+            giveCatWife()
+        }
         "get" -> {
-            val catWife = Dao.catWife(cmd.integers["id"]!!.toULong())
+            val catWife = transaction { CatWife.findById(cmd.integers["id"]!!) }
                 ?: return run {
                     interaction.respondEphemeral { content = "Кошко-жены с таким ID не найдено." }
                 }
+
             interaction.respondEphemeral {
                 allowedMentions()
                 content = """
@@ -128,26 +135,30 @@ suspend fun GuildChatInputCommandInteractionCreateEvent.catWife() {
             }
         }
         "add" -> {
-            Dao.addCatWife(
-                cmd.integers["owner_id"]!!.toULong(),
-                CatWife.Rarity[cmd.strings["rarity"]!!]!!,
-                cmd.strings["name"]!!,
-                cmd.strings["image_url"]!!,
-            )
+            transaction {
+                CatWife.new {
+                    ownerId = User.findById(cmd.integers["owner_id"]!!.toULong())?.id ?: return@new
+                    rarity = CatWife.Rarity[cmd.strings["rarity"]!!]!!
+                    name = cmd.strings["name"]!!
+                    imageUrl = cmd.strings["image_url"]!!
+                }
+            }
             interaction.respondEphemeral { content = "Кошко-жена добавлена." }
         }
         "edit" -> {
-            Dao.editCatWife(
-                cmd.integers["owner_id"]!!.toULong(),
-                cmd.integers["id"]!!.toULong(),
-                cmd.strings["rarity"]?.let { CatWife.Rarity[it] },
-                cmd.strings["name"],
-                cmd.strings["image_url"],
-            )
+            transaction {
+                CatWife.findById(cmd.integers["id"]!!)?.apply {
+                    // weird line of code warning
+                    cmd.integers["owner_id"]?.toULong()?.let { id -> User.findById(id)?.let { ownerId = it.id } }
+                    cmd.strings["rarity"]?.let { rName -> CatWife.Rarity[rName]?.let { rarity = it } }
+                    cmd.strings["name"]?.let { name = it }
+                    cmd.strings["image_url"]?.let { imageUrl = it }
+                }
+            }
             interaction.respondEphemeral { content = "Кошко-жена изменена." }
         }
         "delete" -> {
-            Dao.deleteCatWife(cmd.integers["id"]!!.toULong())
+            transaction { CatWife.findById(cmd.integers["id"]!!)?.delete() }
             interaction.respondEphemeral { content = "Кошко-жена удалена." }
         }
     }

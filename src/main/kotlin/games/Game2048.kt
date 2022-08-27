@@ -1,10 +1,15 @@
 package games
 
-import dao.Dao
-import dev.kord.common.entity.*
-import dev.kord.core.behavior.interaction.*
+import dev.kord.common.entity.ButtonStyle
+import dev.kord.common.entity.DiscordPartialEmoji
+import dev.kord.common.entity.Snowflake
+import dev.kord.core.behavior.interaction.respondEphemeral
+import dev.kord.core.behavior.interaction.updateEphemeralMessage
 import dev.kord.core.event.interaction.ButtonInteractionCreateEvent
-import dev.kord.rest.builder.message.create.*
+import dev.kord.rest.builder.message.create.MessageCreateBuilder
+import dev.kord.rest.builder.message.create.actionRow
+import dev.kord.rest.builder.message.create.embed
+import getUser
 import kotlin.random.Random
 import dev.kord.core.event.interaction.GuildChatInputCommandInteractionCreateEvent as GCICICE
 
@@ -139,8 +144,7 @@ suspend fun ButtonInteractionCreateEvent.handle2048buttons() {
     var isGameOver = game.isGameOver
     if (interaction.componentId == "2048stop") isGameOver = true
     if (isGameOver) {
-        val user = Dao.user(interaction.user.id.value) ?: Dao.addUser(interaction.user.id.value)
-        Dao.editUser(user!!.id, user.credit + game.score)
+        getUser(interaction.user.id.value).apply { credit += game.score }
         Game2048.games.remove(interaction.user.id)
         println("${interaction.user.username} stopped playing")
     }
