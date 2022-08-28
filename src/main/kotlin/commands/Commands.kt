@@ -20,11 +20,10 @@ import model.CatWives
 import model.User
 import org.jetbrains.exposed.sql.transactions.transaction
 import kotlin.math.abs
+import dev.kord.core.entity.interaction.GuildChatInputCommandInteraction as GCICI
+import dev.kord.core.entity.interaction.GuildUserCommandInteraction as GUCI
 import dev.kord.core.event.interaction.ButtonInteractionCreateEvent as BICE
 import dev.kord.core.event.interaction.GuildApplicationCommandInteractionCreateEvent as GACICE
-import dev.kord.core.event.interaction.GuildChatInputCommandInteractionCreateEvent as GCICICE
-import dev.kord.core.event.interaction.GuildMessageCommandInteractionCreateEvent as GMCICE
-import dev.kord.core.event.interaction.GuildUserCommandInteractionCreateEvent as GUCICE
 import dev.kord.core.event.interaction.ModalSubmitInteractionCreateEvent as MSICE
 
 // region Названия команд
@@ -32,7 +31,6 @@ import dev.kord.core.event.interaction.ModalSubmitInteractionCreateEvent as MSIC
 private const val USER_INFO = "Информация"
 private const val COMPARE = "Проверить на совместимость"
 private const val RPS = "Сыграть в Камень-Ножницы-Бумага"
-private const val REPEAT = "Повторить"
 private const val LEADERBOARD = "leaderboard"
 private const val PLAY = "play"
 
@@ -49,7 +47,6 @@ suspend fun createCommands() {
         user(USER_INFO)
         user(COMPARE)
         user(RPS)
-        message(REPEAT)
         input(
             name = LEADERBOARD,
             description = "Рейтинг социального кредита",
@@ -98,58 +95,57 @@ suspend fun createCommands() {
 
     bot.on<GACICE> {
         when (interaction.invokedCommandName) {
-            USER_INFO -> (this as GUCICE).userInfo()
-            COMPARE -> (this as GUCICE).compare()
-            RPS -> (this as GUCICE).playRps()
-            REPEAT -> (this as GMCICE).repeat()
-            LEADERBOARD -> (this as GCICICE).leaderboard()
-            PLAY -> (this as GCICICE).play()
-            SOCIAL_CREDIT -> (this as GCICICE).socialCredit()
-            CAT_WIFE -> (this as GCICICE).catWife()
+            USER_INFO -> (interaction as GUCI).userInfo()
+            COMPARE -> (interaction as GUCI).compare()
+            LEADERBOARD -> (interaction as GCICI).leaderboard()
+            PLAY -> (interaction as GCICI).play()
+            RPS -> (interaction as GUCI).playRps()
+            SOCIAL_CREDIT -> (interaction as GCICI).socialCredit()
+            CAT_WIFE -> (interaction as GCICI).catWife()
         }
     }
 
     bot.on<BICE> {
         when (interaction.componentId.substringBefore('_')) {
-            "2048" -> handle2048buttons()
-            "rps" -> handleRpsButtons()
-            "namecw" -> nameCatWife()
-            "cw" -> viewCatWife()
-            "sellcw" -> sellCatWife()
-            "stealcw" -> stealCatWife()
+            "2048" -> interaction.handle2048buttons()
+            "rps" -> interaction.handleRpsButtons()
+            "namecw" -> interaction.nameCatWife()
+            "cw" -> interaction.viewCatWife()
+            "sellcw" -> interaction.sellCatWife()
+            "stealcw" -> interaction.stealCatWife()
         }
     }
 
     bot.on<MSICE> {
         when (interaction.modalId.substringBefore('_')) {
-            "namecw" -> saveCatWife()
+            "namecw" -> interaction.saveCatWife()
         }
     }
 }
 
-suspend fun GCICICE.play() {
-    val cmd = interaction.command as SubCommand
-    when (cmd.name) {
-        "2048" -> play2048(cmd.integers["size"]?.toInt() ?: 4)
+suspend fun GCICI.play() {
+    val command = command as SubCommand
+    when (command.name) {
+        "2048" -> play2048(command.integers["size"]?.toInt() ?: 4)
         "roulette" -> playRoulette()
     }
 }
 
 // region Команды
 
-suspend fun GUCICE.userInfo() {
-    val id = interaction.target.id.value
+suspend fun GUCI.userInfo() {
+    val id = target.id.value
     val user = getUser(id)
     val catWives = transaction { CatWife.find { CatWives.ownerId eq id }.toList() }
-    interaction.respondEphemeral {
+    respondEphemeral {
         allowedMentions()
         embed {
-            if (interaction.user.id == interaction.target.id) {
+            if (user.id.value == target.id.value) {
                 title = if (user.credit > 0) "Партия гордится тобой!" else "Ну и ну! Вы разочаровали партию!"
                 description = "На твоём счету **${user.credit}** социального кредита"
             } else {
                 title = if (user.credit > 0) "Партия гордится этим гражданином!" else "Ну и ну! Какой позор!"
-                description = "На счету ${interaction.target.mention} **${user.credit}** социального кредита"
+                description = "На счету ${target.mention} **${user.credit}** социального кредита"
             }
             thumbnail { url = if (user.credit > 0) POSITIVE else NEGATIVE }
             if (catWives.isNotEmpty())
@@ -171,38 +167,30 @@ suspend fun GUCICE.userInfo() {
     }
 }
 
-suspend fun GUCICE.compare() {
-    val user = interaction.user
-    val match = interaction.target.asUser()
+suspend fun GUCI.compare() {
+    val match = target.asUser()
     if (user.id == match.id) return run {
-        interaction.respondEphemeral { content = "Хватит себя уже сравнивать!!!" }
+        respondEphemeral { content = "Хватит себя уже сравнивать!!!" }
     }
     val percent = 100 - abs(user.username.hashCode() - match.username.hashCode()) % 101
-    interaction.respondPublic {
+    respondPublic {
         allowedMentions()
         content = "${match.mention} подходит вам на **$percent%**."
     }
 }
 
-suspend fun GMCICE.repeat() {
-    interaction.respondPublic {
-        allowedMentions()
-        content = interaction.target.asMessage().content
+suspend fun GCICI.leaderboard() {
+    var count = 0
+    val (top, bottom) = transaction {
+        val users = User.all()
+            .sortedByDescending { it.credit }
+        count = users.size
+        users.take(10) to users.takeLast(10).asReversed()
     }
-}
-
-suspend fun GCICICE.leaderboard() {
-    interaction.respondEphemeral {
+    respondEphemeral {
         allowedMentions()
         embed {
             title = "Рейтинг социального кредита"
-            var count = 0
-            val (top, bottom) = transaction {
-                val users = User.all()
-                    .sortedByDescending { it.credit }
-                count = users.size
-                users.take(10) to users.takeLast(10).asReversed()
-            }
             field {
                 name = "Доска почёта"
                 inline = true

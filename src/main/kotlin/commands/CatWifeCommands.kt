@@ -9,18 +9,17 @@ import dev.kord.core.behavior.interaction.respondPublic
 import dev.kord.core.behavior.interaction.response.createEphemeralFollowup
 import dev.kord.core.behavior.interaction.response.createPublicFollowup
 import dev.kord.core.behavior.interaction.updatePublicMessage
+import dev.kord.core.entity.interaction.ActionInteraction
+import dev.kord.core.entity.interaction.ButtonInteraction
+import dev.kord.core.entity.interaction.ModalSubmitInteraction
 import dev.kord.rest.builder.message.create.MessageCreateBuilder
 import dev.kord.rest.builder.message.create.actionRow
 import dev.kord.rest.builder.message.create.embed
 import getUser
 import model.CatWife
-import model.User
 import org.jetbrains.exposed.sql.transactions.transaction
 import kotlin.random.Random
 import dev.kord.core.behavior.interaction.response.MessageInteractionResponseBehavior as MIRB
-import dev.kord.core.event.interaction.ActionInteractionCreateEvent as AICE
-import dev.kord.core.event.interaction.ButtonInteractionCreateEvent as BICE
-import dev.kord.core.event.interaction.ModalSubmitInteractionCreateEvent as MSICE
 
 val namePlaceholders = listOf(
     "Джотаро",
@@ -55,18 +54,18 @@ val catWifeImages = mapOf(
     ),
 )
 
-suspend fun AICE.giveCatWife(response: MIRB? = null) {
+suspend fun ActionInteraction.giveCatWife(response: MIRB? = null) {
     val rarity = CatWife.Rarity.getRandom()
     val imageUrl = catWifeImages[rarity]!!.random()
     val catWife = transaction {
         CatWife.new {
-            ownerId = getUser(interaction.user.id.value).id
+            ownerId = getUser(user.id.value).id
             name = namePlaceholders.random()
             this.rarity = rarity
             this.imageUrl = imageUrl
         }
     }
-    if (response == null) interaction.respondEphemeral { catWifeResponse(catWife) }
+    if (response == null) respondEphemeral { catWifeResponse(catWife) }
     else response.createEphemeralFollowup { catWifeResponse(catWife) }
 }
 
@@ -88,10 +87,10 @@ private fun MessageCreateBuilder.catWifeResponse(catWife: CatWife) {
     }
 }
 
-suspend fun BICE.nameCatWife() {
-    interaction.modal(
+suspend fun ButtonInteraction.nameCatWife() {
+    modal(
         title = "Новая кошка жена",
-        customId = interaction.componentId,
+        customId = componentId,
     ) {
         actionRow {
             textInput(
@@ -107,19 +106,19 @@ suspend fun BICE.nameCatWife() {
     }
 }
 
-suspend fun MSICE.saveCatWife() {
-    val id = interaction.modalId
+suspend fun ModalSubmitInteraction.saveCatWife() {
+    val id = modalId
         .substringAfterLast('_')
         .toLong()
-    val name = interaction.actionRows
+    val name = actionRows
         .first()
         .textInputs["name"]!!
         .value!!
     val catWife = transaction { CatWife.findById(id)?.also { it.name = name } } ?: return
-    interaction.respondPublic {
+    respondPublic {
         embed {
             title = "\uD83D\uDC3C Партия проявить щедрость за хороший поведение! \uD83C\uDF5A"
-            description = "\uD83D\uDC31 Мы выдать ${interaction.user.mention} одна кошка жена - $name! \uD83D\uDC69"
+            description = "\uD83D\uDC31 Мы выдать ${user.mention} одна кошка жена - $name! \uD83D\uDC69"
             image = catWife.imageUrl
             color = catWife.rarity.color
         }
@@ -135,35 +134,35 @@ suspend fun MSICE.saveCatWife() {
     }
 }
 
-suspend fun BICE.stealCatWife() {
-    val id = interaction.componentId
+suspend fun ButtonInteraction.stealCatWife() {
+    val id = componentId
         .substringAfterLast('_')
         .toLong()
     val catWife = transaction { CatWife.findById(id) } ?: return
-    if (interaction.user.id.value == catWife.ownerId.value)
-        interaction.respondEphemeral { content = "Вы не можете украсть свою кошку жену!" }
-    else interaction.updatePublicMessage {
+    if (user.id.value == catWife.ownerId.value)
+        respondEphemeral { content = "Вы не можете украсть свою кошку жену!" }
+    else updatePublicMessage {
         content = "блять"
     }.createPublicFollowup {
         content = if (Random.nextDouble() < 0.3) {
-            transaction { catWife.ownerId = getUser(interaction.user.id.value).id }
+            transaction { catWife.ownerId = getUser(user.id.value).id }
             "О ужас! Кажется, кошка жена **${catWife.name}** пропала!"
         } else {
-            transaction { getUser(interaction.user.id.value).credit -= catWife.cost }
+            transaction { getUser(user.id.value).credit -= catWife.cost }
             """
-                Позор! ${interaction.user.mention} попытался украсть кошку жену **${catWife.name}**!
+                Позор! ${user.mention} попытался украсть кошку жену **${catWife.name}**!
                 За такой порочный поступок мы забрать у него **${catWife.cost}** социальный кредит!
             """.trimIndent()
         }
     }
 }
 
-suspend fun BICE.viewCatWife() {
-    val id = interaction.componentId
+suspend fun ButtonInteraction.viewCatWife() {
+    val id = componentId
         .substringAfterLast('_')
         .toLong()
     val catWife = transaction { CatWife.findById(id) } ?: return
-    interaction.respondEphemeral {
+    respondEphemeral {
         embed {
             title = "${catWife.rarity.emoji} ${catWife.name}"
             description = """
@@ -173,7 +172,7 @@ suspend fun BICE.viewCatWife() {
             color = catWife.rarity.color
             image = catWife.imageUrl
         }
-        if (catWife.ownerId.value == interaction.user.id.value) actionRow {
+        if (catWife.ownerId.value == user.id.value) actionRow {
             interactionButton(
                 style = ButtonStyle.Danger,
                 customId = "sellcw_$id",
@@ -185,13 +184,12 @@ suspend fun BICE.viewCatWife() {
     }
 }
 
-suspend fun BICE.sellCatWife() {
-    val id = interaction.componentId.substringAfterLast('_').toLong()
+suspend fun ButtonInteraction.sellCatWife() {
+    val id = componentId.substringAfterLast('_').toLong()
     transaction {
         val catWife = CatWife.findById(id) ?: return@transaction
-        val user = User.findById(interaction.user.id.value) ?: return@transaction
-        user.credit += catWife.cost
+        getUser(user.id.value).credit += catWife.cost
         catWife.delete()
     }
-    interaction.respondEphemeral { content = "Кошко-жена успешно продана!" }
+    respondEphemeral { content = "Кошко-жена успешно продана!" }
 }

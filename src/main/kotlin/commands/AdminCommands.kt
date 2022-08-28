@@ -6,12 +6,12 @@ import dev.kord.core.behavior.interaction.respondEphemeral
 import dev.kord.core.entity.interaction.SubCommand
 import dev.kord.rest.builder.interaction.*
 import dev.kord.rest.builder.message.create.allowedMentions
-import model.CatWife
-import model.User
 import get
 import getUser
+import model.CatWife
+import model.User
 import org.jetbrains.exposed.sql.transactions.transaction
-import dev.kord.core.event.interaction.GuildChatInputCommandInteractionCreateEvent as GCICICE
+import dev.kord.core.entity.interaction.GuildChatInputCommandInteraction as GCICI
 
 fun GuildMultiApplicationCommandBuilder.socialCredit() {
     input(
@@ -67,15 +67,15 @@ fun GuildMultiApplicationCommandBuilder.socialCredit() {
     }
 }
 
-suspend fun GCICICE.socialCredit() {
-    val cmd = interaction.command as SubCommand
-    val user by cmd.users
-    val amount = cmd.integers["amount"]
+suspend fun GCICI.socialCredit() {
+    val command = command as SubCommand
+    val user by command.users
+    val amount = command.integers["amount"]
     val userRow = getUser(user.id.value)
 
-    interaction.respondEphemeral {
+    respondEphemeral {
         allowedMentions()
-        when (cmd.name) {
+        when (command.name) {
             "balance" -> {
                 content = "У ${user.mention} ${userRow.credit} очков."
             }
@@ -173,18 +173,18 @@ private fun SubCommandBuilder.catWifeDescription(isRequired: Boolean) {
     }
 }
 
-suspend fun GCICICE.catWife() {
-    val cmd = interaction.command as SubCommand
-    when (cmd.name) {
+suspend fun GCICI.catWife() {
+    val command = command as SubCommand
+    when (command.name) {
         "test" -> {
             giveCatWife()
         }
         "get" -> {
-            val catWife = transaction { CatWife.findById(cmd.integers["id"]!!) } ?: return run {
-                interaction.respondEphemeral { content = "Кошко-жены с таким ID не найдено." }
+            val catWife = transaction { CatWife.findById(command.integers["id"]!!) } ?: return run {
+                respondEphemeral { content = "Кошко-жены с таким ID не найдено." }
             }
 
-            interaction.respondEphemeral {
+            respondEphemeral {
                 allowedMentions()
                 content = """
                     Кошко-жена: **${catWife.name}**
@@ -196,29 +196,29 @@ suspend fun GCICICE.catWife() {
         "add" -> {
             transaction {
                 CatWife.new {
-                    ownerId = getUser(cmd.users["owner"]!!.id.value).id
-                    rarity = CatWife.Rarity[cmd.strings["rarity"]!!]!!
-                    name = cmd.strings["name"]!!
-                    imageUrl = cmd.strings["image_url"]!!
+                    ownerId = getUser(command.users["owner"]!!.id.value).id
+                    rarity = CatWife.Rarity[command.strings["rarity"]!!]!!
+                    name = command.strings["name"]!!
+                    imageUrl = command.strings["image_url"]!!
                 }
             }
-            interaction.respondEphemeral { content = "Кошко-жена добавлена." }
+            respondEphemeral { content = "Кошко-жена добавлена." }
         }
         "edit" -> {
             transaction {
-                CatWife.findById(cmd.integers["id"]!!)?.apply {
+                CatWife.findById(command.integers["id"]!!)?.apply {
                     // weird line of code warning
-                    cmd.users["owner"]?.id?.value?.let { id -> User.findById(id)?.let { ownerId = it.id } }
-                    cmd.strings["rarity"]?.let { rName -> CatWife.Rarity[rName]?.let { rarity = it } }
-                    cmd.strings["name"]?.let { name = it }
-                    cmd.strings["image_url"]?.let { imageUrl = it }
+                    command.users["owner"]?.id?.value?.let { id -> User.findById(id)?.let { ownerId = it.id } }
+                    command.strings["rarity"]?.let { rName -> CatWife.Rarity[rName]?.let { rarity = it } }
+                    command.strings["name"]?.let { name = it }
+                    command.strings["image_url"]?.let { imageUrl = it }
                 }
             }
-            interaction.respondEphemeral { content = "Кошко-жена изменена." }
+            respondEphemeral { content = "Кошко-жена изменена." }
         }
         "delete" -> {
-            transaction { CatWife.findById(cmd.integers["id"]!!)?.delete() }
-            interaction.respondEphemeral { content = "Кошко-жена удалена." }
+            transaction { CatWife.findById(command.integers["id"]!!)?.delete() }
+            respondEphemeral { content = "Кошко-жена удалена." }
         }
     }
 }

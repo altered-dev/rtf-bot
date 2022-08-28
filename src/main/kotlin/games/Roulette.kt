@@ -9,16 +9,14 @@ import getUser
 import org.jetbrains.exposed.sql.transactions.transaction
 import kotlin.random.Random
 import kotlin.random.nextLong
-import dev.kord.core.event.interaction.GuildChatInputCommandInteractionCreateEvent as GCICICE
+import dev.kord.core.entity.interaction.GuildChatInputCommandInteraction as GCICI
 
-suspend fun GCICICE.playRoulette() {
-    val cmd = interaction.command
-    val amount by cmd.integers
-    val bets = (0 until 3).mapNotNull { cmd.integers["bet_$it"] }
-    val user = interaction.user
+suspend fun GCICI.playRoulette() {
+    val amount by command.integers
+    val bets = (0 until 3).mapNotNull { command.integers["bet_$it"] }
 
     val result = Random.nextLong(0L..36L)
-    val response = if (result in bets) interaction.respondEphemeral {
+    val response = if (result in bets) respondEphemeral {
         transaction { getUser(user.id.value).credit += amount }
         embed {
             title = "Поздравляем! Вы выиграть рулетка!"
@@ -29,7 +27,7 @@ suspend fun GCICICE.playRoulette() {
             if (result == 0L) description += "\nА также мы дать вам кошка жена за поставить на зеро!"
             thumbnail { url = POSITIVE }
         }
-    } else interaction.respondEphemeral {
+    } else respondEphemeral {
         transaction { getUser(user.id.value).credit -= amount }
         embed {
             title = "Как жаль..."

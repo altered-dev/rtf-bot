@@ -6,7 +6,7 @@ import dev.kord.common.entity.DiscordPartialEmoji
 import dev.kord.common.entity.Snowflake
 import dev.kord.core.behavior.interaction.respondEphemeral
 import dev.kord.core.behavior.interaction.updateEphemeralMessage
-import dev.kord.core.event.interaction.ButtonInteractionCreateEvent
+import dev.kord.core.entity.interaction.ButtonInteraction
 import dev.kord.rest.builder.component.ActionRowBuilder
 import dev.kord.rest.builder.message.create.MessageCreateBuilder
 import dev.kord.rest.builder.message.create.actionRow
@@ -14,7 +14,7 @@ import dev.kord.rest.builder.message.create.embed
 import getUser
 import org.jetbrains.exposed.sql.transactions.transaction
 import kotlin.random.Random
-import dev.kord.core.event.interaction.GuildChatInputCommandInteractionCreateEvent as GCICICE
+import dev.kord.core.entity.interaction.GuildChatInputCommandInteraction as GCICI
 
 class Game2048(val size: Int) {
     var score = 0
@@ -138,21 +138,21 @@ class Game2048(val size: Int) {
     }
 }
 
-suspend fun GCICICE.play2048(size: Int) {
+suspend fun GCICI.play2048(size: Int) {
     val game = Game2048(size)
-    println("${interaction.user.username} started playing")
-    interaction.respondEphemeral {
+    println("${user.username} started playing")
+    respondEphemeral {
         content = game.toString()
         embed { title = "Счёт: 0" }
         buttons()
     }
-    Game2048.games[interaction.user.id] = game
+    Game2048.games[user.id] = game
 }
 
-suspend fun ButtonInteractionCreateEvent.handle2048buttons() {
-    val game = Game2048.games[interaction.user.id] ?: return
+suspend fun ButtonInteraction.handle2048buttons() {
+    val game = Game2048.games[user.id] ?: return
     var isGameOver = game.isGameOver
-    when (interaction.componentId.substringAfterLast('_')) {
+    when (componentId.substringAfterLast('_')) {
         "left" -> game.moveHorizontally(-1)
         "up" -> game.moveVertically(-1)
         "right" -> game.moveHorizontally(1)
@@ -160,11 +160,11 @@ suspend fun ButtonInteractionCreateEvent.handle2048buttons() {
         "stop" -> isGameOver = true
     }
     if (isGameOver) {
-        transaction { getUser(interaction.user.id.value).credit += game.score }
-        Game2048.games.remove(interaction.user.id)
-        println("${interaction.user.username} stopped playing")
+        transaction { getUser(user.id.value).credit += game.score }
+        Game2048.games.remove(user.id)
+        println("${user.username} stopped playing")
     }
-    val response = interaction.updateEphemeralMessage {
+    val response = updateEphemeralMessage {
         content = game.toString()
         embed {
             title = if (isGameOver) "Игра окончена! Счёт: **${game.score}**" else "Счёт: ${game.score}"

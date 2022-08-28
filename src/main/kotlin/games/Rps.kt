@@ -2,14 +2,16 @@ package games
 
 import bot
 import dev.kord.common.entity.*
-import dev.kord.core.behavior.channel.*
-import dev.kord.core.behavior.interaction.*
+import dev.kord.core.behavior.channel.createEmbed
+import dev.kord.core.behavior.channel.createMessage
+import dev.kord.core.behavior.interaction.respondEphemeral
+import dev.kord.core.behavior.interaction.updateEphemeralMessage
 import dev.kord.core.entity.User
-import dev.kord.rest.builder.message.create.*
+import dev.kord.core.entity.interaction.ButtonInteraction
+import dev.kord.core.entity.interaction.GuildUserCommandInteraction
+import dev.kord.rest.builder.message.create.actionRow
+import dev.kord.rest.builder.message.create.allowedMentions
 import get
-import guildId
-import dev.kord.core.event.interaction.ButtonInteractionCreateEvent as BICE
-import dev.kord.core.event.interaction.GuildUserCommandInteractionCreateEvent as GUCICE
 import dev.kord.rest.builder.message.create.MessageCreateBuilder as MCB
 
 class Rps(var firstChoice: Choice? = null) {
@@ -45,28 +47,25 @@ class Rps(var firstChoice: Choice? = null) {
 
 const val name = "Камень-Ножницы-Бумага"
 
-suspend fun GUCICE.playRps() {
-    val player1 = interaction.user
-    val player2 = interaction.target.asMember(guildId)
-    if (player2.isBot) return run {
-        interaction.respondEphemeral { content = "Мать свою позови!" }
-    }
-    if (player1.id == player2.id) return run {
-        interaction.respondEphemeral { content = "Нельзя играть с собой!" }
-    }
-    if (player1.id to player2.id in Rps.games || player2.id to player1.id in Rps.games) return run {
-        interaction.respondEphemeral { content = "У вас уже есть текущая игра!" }
-    }
-    Rps.games[player1.id to player2.id] = Rps()
-
-    interaction.respondEphemeral {
-        allowedMentions()
-        content = "Вы вызвали ${player2.mention} в $name! Выберите символ:"
-        buttons(player2.id, false)
-    }
-    player2.getDmChannel().createMessage {
-        content = "${player1.mention} вызвал вас в $name! Выберите символ:"
-        buttons(player1.id, false)
+suspend fun GuildUserCommandInteraction.playRps() {
+    val target = target.asMember(guildId)
+    when {
+        target.isBot -> respondEphemeral { content = "Мать свою позови!" }
+        user.id == target.id -> respondEphemeral { content = "Нельзя играть с собой!" }
+        user.id to target.id in Rps.games || target.id to user.id in Rps.games ->
+            respondEphemeral { content = "У вас уже есть текущая игра!" }
+        else -> {
+            Rps.games[user.id to target.id] = Rps()
+            respondEphemeral {
+                allowedMentions()
+                content = "Вы вызвали ${target.mention} в $name! Выберите символ:"
+                buttons(target.id)
+            }
+            target.getDmChannel().createMessage {
+                content = "${user.mention} вызвал вас в $name! Выберите символ:"
+                buttons(user.id)
+            }
+        }
     }
 }
 
@@ -82,16 +81,15 @@ private fun MCB.buttons(id: Snowflake, disabled: Boolean = false, chosen: Rps.Ch
     }
 }
 
-suspend fun BICE.handleRpsButtons() {
-    val (_, choiceName, otherId) = interaction.componentId.split('_')
-    val user =  interaction.user
+suspend fun ButtonInteraction.handleRpsButtons() {
+    val (_, choiceName, otherId) = componentId.split('_')
     val other = bot.getUser(Snowflake(otherId))!!
     val game = Rps.games[user.id to other.id]
         ?: Rps.games[other.id to user.id]
         ?: Rps().also { Rps.games[user.id to other.id] = it }
 
     val choice = Rps.Choice[choiceName]!!
-    interaction.updateEphemeralMessage {
+    updateEphemeralMessage {
         allowedMentions()
         content = "Выбор против ${other.mention} сделан."
         buttons(other.id, true, choice)
