@@ -4,7 +4,6 @@ import dev.kord.common.entity.Permission
 import dev.kord.common.entity.Permissions
 import dev.kord.core.behavior.interaction.respondEphemeral
 import dev.kord.core.entity.interaction.SubCommand
-import dev.kord.core.event.interaction.GuildChatInputCommandInteractionCreateEvent
 import dev.kord.rest.builder.interaction.*
 import dev.kord.rest.builder.message.create.allowedMentions
 import model.CatWife
@@ -12,35 +11,63 @@ import model.User
 import get
 import getUser
 import org.jetbrains.exposed.sql.transactions.transaction
+import dev.kord.core.event.interaction.GuildChatInputCommandInteractionCreateEvent as GCICICE
 
 fun GuildMultiApplicationCommandBuilder.socialCredit() {
-    input(SOCIAL_CREDIT, "Управление социальным кредитом") {
+    input(
+        name = SOCIAL_CREDIT,
+        description = "Управление социальным кредитом",
+    ) {
         defaultMemberPermissions = Permissions { +Permission.Administrator }
-        subCommand("balance", "Посмотреть баланс") {
-            user("user", "Пользователь") {
+        subCommand(
+            name = "balance",
+            description = "Посмотреть баланс",
+        ) {
+            user(
+                name = "user",
+                description = "Пользователь",
+            ) {
                 required = true
             }
         }
-        subCommand("modify", "Изменить баланс относительно") {
-            user("user", "Пользователь") {
+        subCommand(
+            name = "modify",
+            description = "Изменить баланс относительно"
+        ) {
+            user(
+                name = "user",
+                description = "Пользователь",
+            ) {
                 required = true
             }
-            int("amount", "На какое количество изменить") {
+            int(
+                name = "amount",
+                description = "На какое количество изменить",
+            ) {
                 required = true
             }
         }
-        subCommand("set", "Задать баланс") {
-            user("user", "Пользователь") {
+        subCommand(
+            name = "set",
+            description = "Задать баланс",
+        ) {
+            user(
+                name = "user",
+                description = "Пользователь",
+            ) {
                 required = true
             }
-            int("amount", "Какое количество задать") {
+            int(
+                name = "amount",
+                description = "Какое количество задать",
+            ) {
                 required = true
             }
         }
     }
 }
 
-suspend fun GuildChatInputCommandInteractionCreateEvent.socialCredit() {
+suspend fun GCICICE.socialCredit() {
     val cmd = interaction.command as SubCommand
     val user by cmd.users
     val amount = cmd.integers["amount"]
@@ -49,14 +76,16 @@ suspend fun GuildChatInputCommandInteractionCreateEvent.socialCredit() {
     interaction.respondEphemeral {
         allowedMentions()
         when (cmd.name) {
-            "balance" -> content = "У <@${userRow.id}> ${userRow.credit} очков."
+            "balance" -> {
+                content = "У ${user.mention} ${userRow.credit} очков."
+            }
             "modify" -> {
                 transaction { userRow.credit += amount!! }
-                content = "Теперь у <@${userRow.id}> ${userRow.credit + amount!!} очков."
+                content = "Теперь у ${user.mention} ${userRow.credit + amount!!} очков."
             }
             "set" -> {
                 transaction { userRow.credit = amount!! }
-                content = "Теперь у <@${userRow.id}> $amount очков."
+                content = "Теперь у ${user.mention} $amount очков."
             }
         }
     }
@@ -64,27 +93,48 @@ suspend fun GuildChatInputCommandInteractionCreateEvent.socialCredit() {
 
 
 fun GuildMultiApplicationCommandBuilder.catWife() {
-    input(CAT_WIFE, "Управление кошко-жёнами") {
+    input(
+        name = CAT_WIFE,
+        description = "Управление кошко-жёнами",
+    ) {
         defaultMemberPermissions = Permissions { +Permission.Administrator }
-        subCommand("test", "Тестирование")
-        subCommand("get", "Получить кошко-жену") {
+        subCommand(
+            name = "test",
+            description = "Тестирование",
+        )
+        subCommand(
+            name = "get",
+            description = "Получить кошко-жену",
+        ) {
             catWifeId()
         }
-        subCommand("add", "Добавить кошко-жену") {
+        subCommand(
+            name = "add",
+            description = "Добавить кошко-жену",
+        ) {
             catWifeDescription(true)
         }
-        subCommand("edit", "Изменить кошко-жену") {
+        subCommand(
+            name = "edit",
+            description = "Изменить кошко-жену",
+        ) {
             catWifeId()
             catWifeDescription(false)
         }
-        subCommand("remove", "Удалить кошко-жену") {
+        subCommand(
+            name = "remove",
+            description = "Удалить кошко-жену",
+        ) {
             catWifeId()
         }
     }
 }
 
 private fun SubCommandBuilder.catWifeId() {
-    int("id", "ID кошко-жены") {
+    int(
+        name = "id",
+        description = "ID кошко-жены",
+    ) {
         required = true
         minValue = 0
         maxValue = ULong.MAX_VALUE.toLong()
@@ -92,10 +142,16 @@ private fun SubCommandBuilder.catWifeId() {
 }
 
 private fun SubCommandBuilder.catWifeDescription(isRequired: Boolean) {
-    user("owner", "Владелец") {
+    user(
+        name = "owner",
+        description = "Владелец",
+    ) {
         required = isRequired
     }
-    string("rarity", "Редкость кошко-жены") {
+    string(
+        name = "rarity",
+        description = "Редкость кошко-жены"
+    ) {
         required = isRequired
         choice("Обычная", "common")
         choice("Редкая", "rare")
@@ -103,25 +159,30 @@ private fun SubCommandBuilder.catWifeDescription(isRequired: Boolean) {
         choice("Легендарная", "legendary")
         choice("Для разработчика", "dev")
     }
-    string("name", "Имя кошко-жены") {
+    string(
+        name = "name",
+        description = "Имя кошко-жены",
+    ) {
         required = isRequired
     }
-    string("image_url", "Ссылка на картинку") {
+    string(
+        name = "image_url",
+        description = "Ссылка на картинку",
+    ) {
         required = isRequired
     }
 }
 
-suspend fun GuildChatInputCommandInteractionCreateEvent.catWife() {
+suspend fun GCICICE.catWife() {
     val cmd = interaction.command as SubCommand
     when (cmd.name) {
         "test" -> {
             giveCatWife()
         }
         "get" -> {
-            val catWife = transaction { CatWife.findById(cmd.integers["id"]!!) }
-                ?: return run {
-                    interaction.respondEphemeral { content = "Кошко-жены с таким ID не найдено." }
-                }
+            val catWife = transaction { CatWife.findById(cmd.integers["id"]!!) } ?: return run {
+                interaction.respondEphemeral { content = "Кошко-жены с таким ID не найдено." }
+            }
 
             interaction.respondEphemeral {
                 allowedMentions()
@@ -129,7 +190,7 @@ suspend fun GuildChatInputCommandInteractionCreateEvent.catWife() {
                     Кошко-жена: **${catWife.name}**
                     Редкость: **${catWife.rarity.displayName}**
                     Ссылка на картинку: **${catWife.imageUrl}**
-                    """.trimIndent()
+                """.trimIndent()
             }
         }
         "add" -> {

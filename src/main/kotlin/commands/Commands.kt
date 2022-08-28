@@ -12,10 +12,7 @@ import dev.kord.rest.builder.interaction.subCommand
 import dev.kord.rest.builder.message.create.actionRow
 import dev.kord.rest.builder.message.create.allowedMentions
 import dev.kord.rest.builder.message.create.embed
-import games.handle2048buttons
-import games.handleRpsButtons
-import games.play2048
-import games.playRps
+import games.*
 import getUser
 import guildId
 import model.CatWife
@@ -42,8 +39,8 @@ private const val PLAY = "play"
 internal const val SOCIAL_CREDIT = "sc"
 internal const val CAT_WIFE = "cw"
 
-private const val POSITIVE = "https://i.imgur.com/bdxSEjb.png"
-private const val NEGATIVE = "https://i.imgur.com/b5Q9fjS.png"
+const val POSITIVE = "https://i.imgur.com/bdxSEjb.png"
+const val NEGATIVE = "https://i.imgur.com/b5Q9fjS.png"
 
 // endregion
 
@@ -53,12 +50,45 @@ suspend fun createCommands() {
         user(COMPARE)
         user(RPS)
         message(REPEAT)
-        input(LEADERBOARD, "Рейтинг социального кредита")
-        input(PLAY, "Игры") {
-            subCommand("2048", "Сыграть в 2048") {
-                int("size", "Размер поля") {
+        input(
+            name = LEADERBOARD,
+            description = "Рейтинг социального кредита",
+        )
+        input(
+            name = PLAY,
+            description = "Игры",
+        ) {
+            subCommand(
+                name = "2048",
+                description = "Сыграть в 2048",
+            ) {
+                int(
+                    name = "size",
+                    description = "Размер поля",
+                ) {
                     minValue = 4
                     maxValue = 8
+                }
+            }
+            subCommand(
+                name = "roulette",
+                description = "Сыграть в Рулетку",
+            ) {
+                int(
+                    name = "amount",
+                    description = "Количество социального кредита на ставке",
+                ) {
+                    required = true
+                }
+                repeat(3) {
+                    int(
+                        name = "bet_$it",
+                        description = "Ставка",
+                    ) {
+                        required = true
+                        minValue = 0
+                        maxValue = 36
+                    }
                 }
             }
         }
@@ -80,21 +110,28 @@ suspend fun createCommands() {
     }
 
     bot.on<BICE> {
-        val id = interaction.componentId
-        when {
-            id.startsWith("2048") -> handle2048buttons()
-            id.startsWith("rps") -> handleRpsButtons()
-            id.startsWith("name_cat_wife") -> nameCatWife()
-            id.startsWith("cw") -> viewCatWife()
-            id.startsWith("sell_cw") -> sellCatWife()
+        when (interaction.componentId.substringBefore('_')) {
+            "2048" -> handle2048buttons()
+            "rps" -> handleRpsButtons()
+            "namecw" -> nameCatWife()
+            "cw" -> viewCatWife()
+            "sellcw" -> sellCatWife()
+            "stealcw" -> stealCatWife()
         }
     }
 
     bot.on<MSICE> {
-        val id = interaction.modalId
-        when {
-            id.startsWith("name_cat_wife") -> saveCatWife()
+        when (interaction.modalId.substringBefore('_')) {
+            "namecw" -> saveCatWife()
         }
+    }
+}
+
+suspend fun GCICICE.play() {
+    val cmd = interaction.command as SubCommand
+    when (cmd.name) {
+        "2048" -> play2048(cmd.integers["size"]?.toInt() ?: 4)
+        "roulette" -> playRoulette()
     }
 }
 
@@ -106,18 +143,25 @@ suspend fun GUCICE.userInfo() {
     val catWives = transaction { CatWife.find { CatWives.ownerId eq id }.toList() }
     interaction.respondEphemeral {
         allowedMentions()
-        this.content = "<@$id>,"
         embed {
-            // TODO: messages for when another user is selected
-            title = if (user.credit > 0) "Партия гордится тобой!" else "Ну и ну! Вы разочаровали партию!"
-            description = "На твоём счету **${user.credit}** социального кредита"
+            if (interaction.user.id == interaction.target.id) {
+                title = if (user.credit > 0) "Партия гордится тобой!" else "Ну и ну! Вы разочаровали партию!"
+                description = "На твоём счету **${user.credit}** социального кредита"
+            } else {
+                title = if (user.credit > 0) "Партия гордится этим гражданином!" else "Ну и ну! Какой позор!"
+                description = "На счету ${interaction.target.mention} **${user.credit}** социального кредита"
+            }
             thumbnail { url = if (user.credit > 0) POSITIVE else NEGATIVE }
-            if (catWives.isNotEmpty()) footer { text = "Кошко-жёны:" }
+            if (catWives.isNotEmpty())
+                footer { text = "Кошко-жёны:" }
         }
         catWives.chunked(5).forEach { row ->
             actionRow {
                 row.forEach {
-                    interactionButton(ButtonStyle.Secondary, "cw_${it.id.value}") {
+                    interactionButton(
+                        style = ButtonStyle.Secondary,
+                        customId = "cw_${it.id.value}",
+                    ) {
                         emoji = DiscordPartialEmoji(name = it.rarity.emoji)
                         label = it.name
                     }
@@ -150,25 +194,34 @@ suspend fun GMCICE.repeat() {
 suspend fun GCICICE.leaderboard() {
     interaction.respondEphemeral {
         allowedMentions()
-        content = buildString {
-            appendLine("**Рейтинг социального кредита:**")
-            transaction {
-                User.all()
+        embed {
+            title = "Рейтинг социального кредита"
+            var count = 0
+            val (top, bottom) = transaction {
+                val users = User.all()
                     .sortedByDescending { it.credit }
-                    .take(10)
-                    .forEachIndexed { index, (id, credit) ->
-                        appendLine("**${index + 1}**: <@$id> - $credit очков")
+                count = users.size
+                users.take(10) to users.takeLast(10).asReversed()
+            }
+            field {
+                name = "Доска почёта"
+                inline = true
+                value = buildString {
+                    top.forEachIndexed { index, (id, credit) ->
+                        appendLine("**${index + 1}** - <@$id>: $credit очков")
                     }
+                }
+            }
+            field {
+                name = "Доска позора"
+                inline = true
+                value = buildString {
+                    bottom.forEachIndexed { index, (id, credit) ->
+                        appendLine("**${count - index}** - <@$id>: $credit очков")
+                    }
+                }
             }
         }
-    }
-}
-
-suspend fun GCICICE.play() {
-    val cmd = interaction.command as SubCommand
-
-    when (cmd.name) {
-        "2048" -> play2048(cmd.integers["size"]?.toInt() ?: 4)
     }
 }
 

@@ -7,6 +7,7 @@ import dev.kord.common.entity.Snowflake
 import dev.kord.core.behavior.interaction.respondEphemeral
 import dev.kord.core.behavior.interaction.updateEphemeralMessage
 import dev.kord.core.event.interaction.ButtonInteractionCreateEvent
+import dev.kord.rest.builder.component.ActionRowBuilder
 import dev.kord.rest.builder.message.create.MessageCreateBuilder
 import dev.kord.rest.builder.message.create.actionRow
 import dev.kord.rest.builder.message.create.embed
@@ -137,16 +138,27 @@ class Game2048(val size: Int) {
     }
 }
 
+suspend fun GCICICE.play2048(size: Int) {
+    val game = Game2048(size)
+    println("${interaction.user.username} started playing")
+    interaction.respondEphemeral {
+        content = game.toString()
+        embed { title = "Счёт: 0" }
+        buttons()
+    }
+    Game2048.games[interaction.user.id] = game
+}
+
 suspend fun ButtonInteractionCreateEvent.handle2048buttons() {
     val game = Game2048.games[interaction.user.id] ?: return
-    when (interaction.componentId) {
-        "2048left" -> game.moveHorizontally(-1)
-        "2048up" -> game.moveVertically(-1)
-        "2048right" -> game.moveHorizontally(1)
-        "2048down" -> game.moveVertically(1)
-    }
     var isGameOver = game.isGameOver
-    if (interaction.componentId == "2048stop") isGameOver = true
+    when (interaction.componentId.substringAfterLast('_')) {
+        "left" -> game.moveHorizontally(-1)
+        "up" -> game.moveVertically(-1)
+        "right" -> game.moveHorizontally(1)
+        "down" -> game.moveVertically(1)
+        "stop" -> isGameOver = true
+    }
     if (isGameOver) {
         transaction { getUser(interaction.user.id.value).credit += game.score }
         Game2048.games.remove(interaction.user.id)
@@ -165,49 +177,38 @@ suspend fun ButtonInteractionCreateEvent.handle2048buttons() {
     }
 }
 
-suspend fun GCICICE.play2048(size: Int) {
-    val game = Game2048(size)
-    println("${interaction.user.username} started playing")
-    interaction.respondEphemeral {
-        content = game.toString()
-        embed { title = "Счёт: 0" }
-        buttons()
-    }
-    Game2048.games[interaction.user.id] = game
+private fun ActionRowBuilder.emptyButton(id: String) = interactionButton(
+    style = ButtonStyle.Secondary,
+    customId = id,
+) {
+    label = " "
+    disabled = true
+}
+
+private fun ActionRowBuilder.actionButton(
+    dir: String,
+    emojiName: String,
+) = interactionButton(
+    style = ButtonStyle.Secondary,
+    customId = "2048_$dir",
+) {
+    emoji = DiscordPartialEmoji(name = emojiName)
 }
 
 private fun MessageCreateBuilder.buttons() {
     actionRow {
-        interactionButton(ButtonStyle.Secondary, "n0") {
-            label = " "
-        }
-        interactionButton(ButtonStyle.Secondary, "2048up") {
-            emoji = DiscordPartialEmoji(name = "\uD83D\uDD3C")
-        }
-        interactionButton(ButtonStyle.Secondary, "n1") {
-            label = " "
-        }
+        emptyButton("1")
+        actionButton("up", "\uD83D\uDD3C")
+        emptyButton("2")
     }
     actionRow {
-        interactionButton(ButtonStyle.Secondary, "2048left") {
-            emoji = DiscordPartialEmoji(name = "◀️")
-        }
-        interactionButton(ButtonStyle.Secondary, "n2") {
-            label = " "
-        }
-        interactionButton(ButtonStyle.Secondary, "2048right") {
-            emoji = DiscordPartialEmoji(name = "▶️")
-        }
+        actionButton("left", "◀️")
+        emptyButton("3")
+        actionButton("right", "▶️")
     }
     actionRow {
-        interactionButton(ButtonStyle.Secondary, "n3") {
-            label = " "
-        }
-        interactionButton(ButtonStyle.Secondary, "2048down") {
-            emoji = DiscordPartialEmoji(name = "\uD83D\uDD3D")
-        }
-        interactionButton(ButtonStyle.Secondary, "2048stop") {
-            emoji = DiscordPartialEmoji(name = "\uD83D\uDED1")
-        }
+        emptyButton("4")
+        actionButton("down", "\uD83D\uDD3D")
+        actionButton("stop", "\uD83D\uDED1")
     }
 }

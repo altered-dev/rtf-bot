@@ -74,7 +74,7 @@ private fun MCB.buttons(id: Snowflake, disabled: Boolean = false, chosen: Rps.Ch
     for (row in Rps.Choice.chunked(5)) actionRow {
         for (choice in row) interactionButton(
             if (choice == chosen) ButtonStyle.Success else ButtonStyle.Secondary,
-            "rps${choice.name.lowercase()}_${id.value}"
+            "rps_${choice.name.lowercase()}_${id.value}"
         ) {
             emoji = DiscordPartialEmoji(name = choice.emoji)
             this.disabled = disabled
@@ -83,14 +83,14 @@ private fun MCB.buttons(id: Snowflake, disabled: Boolean = false, chosen: Rps.Ch
 }
 
 suspend fun BICE.handleRpsButtons() {
-    val (choiceName, otherId) = interaction.componentId.split('_')
+    val (_, choiceName, otherId) = interaction.componentId.split('_')
     val user =  interaction.user
     val other = bot.getUser(Snowflake(otherId))!!
     val game = Rps.games[user.id to other.id]
         ?: Rps.games[other.id to user.id]
         ?: Rps().also { Rps.games[user.id to other.id] = it }
 
-    val choice = Rps.Choice[choiceName.substring(3)]!!
+    val choice = Rps.Choice[choiceName]!!
     interaction.updateEphemeralMessage {
         allowedMentions()
         content = "Выбор против ${other.mention} сделан."
