@@ -6,13 +6,17 @@ import dev.kord.common.entity.TextInputStyle
 import dev.kord.core.behavior.interaction.modal
 import dev.kord.core.behavior.interaction.respondEphemeral
 import dev.kord.core.behavior.interaction.respondPublic
+import dev.kord.core.behavior.interaction.response.createEphemeralFollowup
+import dev.kord.rest.builder.message.create.MessageCreateBuilder
 import dev.kord.rest.builder.message.create.actionRow
 import dev.kord.rest.builder.message.create.embed
+import getUser
 import model.CatWife
 import model.User
 import org.jetbrains.exposed.sql.transactions.transaction
+import dev.kord.core.behavior.interaction.response.MessageInteractionResponseBehavior as MIRB
+import dev.kord.core.event.interaction.ActionInteractionCreateEvent as AICE
 import dev.kord.core.event.interaction.ButtonInteractionCreateEvent as BICE
-import dev.kord.core.event.interaction.GuildApplicationCommandInteractionCreateEvent as GACICE
 import dev.kord.core.event.interaction.ModalSubmitInteractionCreateEvent as MSICE
 
 val namePlaceholders = listOf(
@@ -23,28 +27,57 @@ val namePlaceholders = listOf(
     "Яндекс.Алиса",
 )
 
-suspend fun GACICE.giveCatWife() {
+val catWifeImages = mapOf(
+    CatWife.Rarity.COMMON to listOf(
+        "https://i.imgur.com/1ksIMXs.png",
+        "https://i.imgur.com/opsbhxK.png",
+        "https://i.imgur.com/GLpNv4C.png",
+    ),
+    CatWife.Rarity.UNCOMMON to listOf(
+        "https://i.imgur.com/tKYKhNW.png",
+        "https://i.imgur.com/nd3yEXj.png",
+    ),
+    CatWife.Rarity.RARE to listOf(
+        "https://i.imgur.com/Xb9fsiD.png",
+        "https://i.imgur.com/vqnkL4u.png",
+    ),
+    CatWife.Rarity.EPIC to listOf(
+        "https://i.imgur.com/dYg5qKl.png",
+    ),
+    CatWife.Rarity.LEGENDARY to listOf(
+        "https://i.imgur.com/ZSAMp5D.png",
+    ),
+    CatWife.Rarity.DEV to listOf(
+        "https://i.imgur.com/qUFVYxR.png",
+    ),
+)
+
+suspend fun AICE.giveCatWife(response: MIRB? = null) {
     val rarity = CatWife.Rarity.getRandom()
-    val imageUrl = ""
+    val imageUrl = catWifeImages[rarity]!!.random()
     val catWife = transaction {
         CatWife.new {
-            User.findById(interaction.user.id.value)?.let { ownerId = it.id }
+            ownerId = getUser(interaction.user.id.value).id
+            name = namePlaceholders.random()
             this.rarity = rarity
             this.imageUrl = imageUrl
         }
     }
-    interaction.respondEphemeral {
-        embed {
-            title = "Партия гордится тобой!"
-            description = "Ты получить новый кошка жена!"
-            image = imageUrl
-            color = rarity.color
-        }
-        actionRow {
-            interactionButton(ButtonStyle.Success, "name_cat_wife_${catWife.id}") {
-                label = "Ура! Хочу её назвать"
-                emoji = DiscordPartialEmoji(name = "\uD83E\uDD73")
-            }
+    if (response == null) interaction.respondEphemeral { catWifeResponse(catWife) }
+    else response.createEphemeralFollowup { catWifeResponse(catWife) }
+}
+
+private fun MessageCreateBuilder.catWifeResponse(catWife: CatWife) {
+    embed {
+        title = "\uD83D\uDC3C Партия гордится тобой! \uD83C\uDF5A"
+        description = "\uD83D\uDC31 Ты получить новый кошка жена! \uD83D\uDC69"
+        image = catWife.imageUrl
+        color = catWife.rarity.color
+    }
+    actionRow {
+        interactionButton(ButtonStyle.Success, "name_cat_wife_${catWife.id}") {
+            label = "Ура! Хочу её назвать"
+            emoji = DiscordPartialEmoji(name = "\uD83E\uDD73")
         }
     }
 }
@@ -64,13 +97,46 @@ suspend fun BICE.nameCatWife() {
 suspend fun MSICE.saveCatWife() {
     val id = interaction.modalId.substringAfterLast('_').toLong()
     val name = interaction.actionRows.first().textInputs["name"]!!.value!!
-    val catWife = CatWife.findById(id)?.also { it.name = name } ?: return
+    val catWife = transaction { CatWife.findById(id)?.also { it.name = name } } ?: return
     interaction.respondPublic {
         embed {
-            title = "У ${interaction.user.mention} появилась новая кошка жена!"
-            description = "Её зовут $name!"
+            title = "\uD83D\uDC3C Партия проявить щедрость за хороший поведение! \uD83C\uDF5A"
+            description = "\uD83D\uDC31 Мы выдать ${interaction.user.mention} одна кошка жена - $name! \uD83D\uDC69"
             image = catWife.imageUrl
             color = catWife.rarity.color
         }
     }
+}
+
+suspend fun BICE.viewCatWife() {
+    val id = interaction.componentId.substringAfterLast('_').toLong()
+    val catWife = transaction { CatWife.findById(id) } ?: return
+    interaction.respondEphemeral {
+        embed {
+            title = "${catWife.rarity.emoji} ${catWife.name}"
+            description = """
+                Владелец: <@${catWife.ownerId.value}>
+                Редкость: ${catWife.rarity.displayName}
+            """.trimIndent()
+            color = catWife.rarity.color
+            image = catWife.imageUrl
+        }
+        if (catWife.ownerId.value == interaction.user.id.value) actionRow {
+            interactionButton(ButtonStyle.Danger, "sell_cw_$id") {
+                label = "Продать за ${catWife.cost} СК"
+                emoji = DiscordPartialEmoji(name = "\uD83D\uDCB0")
+            }
+        }
+    }
+}
+
+suspend fun BICE.sellCatWife() {
+    val id = interaction.componentId.substringAfterLast('_').toLong()
+    transaction {
+        val catWife = CatWife.findById(id) ?: return@transaction
+        val user = User.findById(interaction.user.id.value) ?: return@transaction
+        user.credit += catWife.cost
+        catWife.delete()
+    }
+    interaction.respondEphemeral { content = "Кошко-жена успешно продана!" }
 }

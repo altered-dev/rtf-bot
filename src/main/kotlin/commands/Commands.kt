@@ -1,27 +1,27 @@
 package commands
 
 import bot
+import dev.kord.common.entity.ButtonStyle
+import dev.kord.common.entity.DiscordPartialEmoji
 import dev.kord.core.behavior.interaction.respondEphemeral
 import dev.kord.core.behavior.interaction.respondPublic
 import dev.kord.core.entity.interaction.SubCommand
 import dev.kord.core.on
 import dev.kord.rest.builder.interaction.int
 import dev.kord.rest.builder.interaction.subCommand
+import dev.kord.rest.builder.message.create.actionRow
 import dev.kord.rest.builder.message.create.allowedMentions
-import model.User
+import dev.kord.rest.builder.message.create.embed
 import games.handle2048buttons
 import games.handleRpsButtons
 import games.play2048
 import games.playRps
 import getUser
 import guildId
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import model.CatWife
+import model.CatWives
+import model.User
 import org.jetbrains.exposed.sql.transactions.transaction
-import java.io.ByteArrayInputStream
-import java.io.ByteArrayOutputStream
-import java.net.URL
-import javax.imageio.ImageIO
 import kotlin.math.abs
 import dev.kord.core.event.interaction.ButtonInteractionCreateEvent as BICE
 import dev.kord.core.event.interaction.GuildApplicationCommandInteractionCreateEvent as GACICE
@@ -42,10 +42,8 @@ private const val PLAY = "play"
 internal const val SOCIAL_CREDIT = "sc"
 internal const val CAT_WIFE = "cw"
 
-private const val POSITIVE =
-    "https://media.discordapp.net/attachments/777832858059407391/1008420638442135583/positive.png"
-private const val NEGATIVE =
-    "https://media.discordapp.net/attachments/777832858059407391/1008420637926232084/negative.png"
+private const val POSITIVE = "https://i.imgur.com/bdxSEjb.png"
+private const val NEGATIVE = "https://i.imgur.com/b5Q9fjS.png"
 
 // endregion
 
@@ -87,6 +85,8 @@ suspend fun createCommands() {
             id.startsWith("2048") -> handle2048buttons()
             id.startsWith("rps") -> handleRpsButtons()
             id.startsWith("name_cat_wife") -> nameCatWife()
+            id.startsWith("cw") -> viewCatWife()
+            id.startsWith("sell_cw") -> sellCatWife()
         }
     }
 
@@ -103,29 +103,27 @@ suspend fun createCommands() {
 suspend fun GUCICE.userInfo() {
     val id = interaction.target.id.value
     val user = getUser(id)
-
-    val image = withContext(Dispatchers.IO) {
-        if (user.credit > 0) ImageIO.read(URL(POSITIVE)).apply {
-            graphics.run {
-                font = font.deriveFont(72f)
-                drawString(user.credit.toString(), 500, 385)
-                dispose()
-            }
-        } else ImageIO.read(URL(NEGATIVE)).apply {
-            graphics.run {
-                font = font.deriveFont(64f)
-                drawString(user.credit.toString(), 280, 280)
-                dispose()
-            }
-        }
-    }
-    val stream = ByteArrayOutputStream().also { ImageIO.write(image, "png", it) }
-    val content = ByteArrayInputStream(stream.toByteArray())
-
+    val catWives = transaction { CatWife.find { CatWives.ownerId eq id }.toList() }
     interaction.respondEphemeral {
         allowedMentions()
         this.content = "<@$id>,"
-        addFile("positive.png", content)
+        embed {
+            // TODO: messages for when another user is selected
+            title = if (user.credit > 0) "Партия гордится тобой!" else "Ну и ну! Вы разочаровали партию!"
+            description = "На твоём счету **${user.credit}** социального кредита"
+            thumbnail { url = if (user.credit > 0) POSITIVE else NEGATIVE }
+            if (catWives.isNotEmpty()) footer { text = "Кошко-жёны:" }
+        }
+        catWives.chunked(5).forEach { row ->
+            actionRow {
+                row.forEach {
+                    interactionButton(ButtonStyle.Secondary, "cw_${it.id.value}") {
+                        emoji = DiscordPartialEmoji(name = it.rarity.emoji)
+                        label = it.name
+                    }
+                }
+            }
+        }
     }
 }
 

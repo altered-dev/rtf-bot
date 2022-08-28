@@ -92,10 +92,8 @@ private fun SubCommandBuilder.catWifeId() {
 }
 
 private fun SubCommandBuilder.catWifeDescription(isRequired: Boolean) {
-    int("owner_id", "ID владельца") {
+    user("owner", "Владелец") {
         required = isRequired
-        minValue = 0
-        maxValue = ULong.MAX_VALUE.toLong()
     }
     string("rarity", "Редкость кошко-жены") {
         required = isRequired
@@ -137,7 +135,7 @@ suspend fun GuildChatInputCommandInteractionCreateEvent.catWife() {
         "add" -> {
             transaction {
                 CatWife.new {
-                    ownerId = User.findById(cmd.integers["owner_id"]!!.toULong())?.id ?: return@new
+                    ownerId = getUser(cmd.users["owner"]!!.id.value).id
                     rarity = CatWife.Rarity[cmd.strings["rarity"]!!]!!
                     name = cmd.strings["name"]!!
                     imageUrl = cmd.strings["image_url"]!!
@@ -149,7 +147,7 @@ suspend fun GuildChatInputCommandInteractionCreateEvent.catWife() {
             transaction {
                 CatWife.findById(cmd.integers["id"]!!)?.apply {
                     // weird line of code warning
-                    cmd.integers["owner_id"]?.toULong()?.let { id -> User.findById(id)?.let { ownerId = it.id } }
+                    cmd.users["owner"]?.id?.value?.let { id -> User.findById(id)?.let { ownerId = it.id } }
                     cmd.strings["rarity"]?.let { rName -> CatWife.Rarity[rName]?.let { rarity = it } }
                     cmd.strings["name"]?.let { name = it }
                     cmd.strings["image_url"]?.let { imageUrl = it }

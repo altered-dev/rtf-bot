@@ -1,5 +1,6 @@
 package games
 
+import commands.giveCatWife
 import dev.kord.common.entity.ButtonStyle
 import dev.kord.common.entity.DiscordPartialEmoji
 import dev.kord.common.entity.Snowflake
@@ -10,13 +11,17 @@ import dev.kord.rest.builder.message.create.MessageCreateBuilder
 import dev.kord.rest.builder.message.create.actionRow
 import dev.kord.rest.builder.message.create.embed
 import getUser
+import org.jetbrains.exposed.sql.transactions.transaction
 import kotlin.random.Random
 import dev.kord.core.event.interaction.GuildChatInputCommandInteractionCreateEvent as GCICICE
 
 class Game2048(val size: Int) {
     var score = 0
+    var claimed = false
     private var field = List(size) { IntArray(size) }
     private val bounds inline get() = 0 until size
+
+    val won get() = field.any { 2048 in it }
 
     init {
         addTile()
@@ -61,7 +66,7 @@ class Game2048(val size: Int) {
                 do ix -= dx while (ix in bounds && field[ix][y] == 0)
                 if (ix in bounds && field[ix][y] == newField[x][y]) {
                     newField[x][y] *= 2
-                    score += newField[x][y]
+                    score += newField[x][y] - size + 4
                     ix -= dx
                 }
                 x -= dx
@@ -86,7 +91,7 @@ class Game2048(val size: Int) {
                 do iy -= dy while (iy in bounds && field[x][iy] == 0)
                 if (iy in bounds && field[x][iy] == newField[x][y]) {
                     newField[x][y] *= 2
-                    score += newField[x][y]
+                    score += newField[x][y] - size + 4
                     iy -= dy
                 }
                 y -= dy
@@ -133,7 +138,6 @@ class Game2048(val size: Int) {
 }
 
 suspend fun ButtonInteractionCreateEvent.handle2048buttons() {
-    println("2048")
     val game = Game2048.games[interaction.user.id] ?: return
     when (interaction.componentId) {
         "2048left" -> game.moveHorizontally(-1)
@@ -144,16 +148,20 @@ suspend fun ButtonInteractionCreateEvent.handle2048buttons() {
     var isGameOver = game.isGameOver
     if (interaction.componentId == "2048stop") isGameOver = true
     if (isGameOver) {
-        getUser(interaction.user.id.value).apply { credit += game.score }
+        transaction { getUser(interaction.user.id.value).credit += game.score }
         Game2048.games.remove(interaction.user.id)
         println("${interaction.user.username} stopped playing")
     }
-    interaction.updateEphemeralMessage {
+    val response = interaction.updateEphemeralMessage {
         content = game.toString()
         embed {
             title = if (isGameOver) "Игра окончена! Счёт: **${game.score}**" else "Счёт: ${game.score}"
         }
         if (!isGameOver) buttons()
+    }
+    if (!game.claimed && game.won) {
+        giveCatWife(response)
+        game.claimed = true
     }
 }
 
@@ -162,9 +170,7 @@ suspend fun GCICICE.play2048(size: Int) {
     println("${interaction.user.username} started playing")
     interaction.respondEphemeral {
         content = game.toString()
-        embed {
-            title = "Счёт: 0"
-        }
+        embed { title = "Счёт: 0" }
         buttons()
     }
     Game2048.games[interaction.user.id] = game
